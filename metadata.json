@@ -1,0 +1,6 @@
+{
+  "name": "Explore - Multi-Category Commerce, Digital Services & Reseller Hub",
+  "description": "Explore (এক্সপ্লোর) - সর্বাধুনিক প্ল্যাটফর্ম যেখানে আপনি ফ্যাশন ও টেক গ্যাজেটস, এআই ও ডিজিটাল সাবস্ক্রিপশন, এসএমএম প্যানেল এবং মোবাইল রিচার্জ সহজে কেনাকাটার পাশাপাশি পাইকারি রিসেলিং ব্যবসা করতে পারেন।",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

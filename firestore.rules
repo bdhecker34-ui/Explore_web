@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Master Gate: Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // Connectivity test collection
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    // Entity validator: User
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'name', 'role', 'walletBalance']) &&
+             data.keys().hasOnly(['id', 'email', 'name', 'avatar', 'shopName', 'phone', 'role', 'walletBalance', 'tier', 'apiKey', 'createdAt']) &&
+             data.id is string && data.id == request.auth.uid &&
+             data.email is string && data.email.size() <= 120 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.role in ['customer', 'reseller'] &&
+             data.walletBalance is number &&
+             (!('shopName' in data) || (data.shopName is string && data.shopName.size() <= 100)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 20)) &&
+             (!('tier' in data) || data.tier in ['Silver Dealer', 'Gold Merchant', 'Platinum Distributor']) &&
+             (!('apiKey' in data) || (data.apiKey is string && data.apiKey.size() <= 120)) &&
+             (!('avatar' in data) || (data.avatar is string && data.avatar.size() <= 500)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 60));
+    }
+
+    // Entity validator: Order
+    function isValidOrder(data) {
+      return data.keys().hasAll(['id', 'userId', 'type', 'itemsSummary', 'totalAmount', 'status', 'paymentMethod']) &&
+             data.keys().hasOnly(['id', 'userId', 'type', 'itemsSummary', 'totalAmount', 'profitEarned', 'isResellerOrder', 'status', 'paymentMethod', 'customerName', 'customerPhone', 'customerAddress', 'digitalVoucher', 'trackingCode', 'createdAt']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.type in ['physical', 'digital', 'smm', 'recharge'] &&
+             data.itemsSummary is string && data.itemsSummary.size() <= 500 &&
+             data.totalAmount is number &&
+             data.status in ['pending', 'processing', 'completed'] &&
+             data.paymentMethod in ['wallet', 'bkash', 'nagad', 'cod'] &&
+             (!('profitEarned' in data) || data.profitEarned is number) &&
+             (!('isResellerOrder' in data) || data.isResellerOrder is bool) &&
+             (!('customerName' in data) || (data.customerName is string && data.customerName.size() <= 100)) &&
+             (!('customerPhone' in data) || (data.customerPhone is string && data.customerPhone.size() <= 20)) &&
+             (!('customerAddress' in data) || (data.customerAddress is string && data.customerAddress.size() <= 300)) &&
+             (!('digitalVoucher' in data) || (data.digitalVoucher is string && data.digitalVoucher.size() <= 200)) &&
+             (!('trackingCode' in data) || (data.trackingCode is string && data.trackingCode.size() <= 200)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 60));
+    }
+
+    // Entity validator: WalletTransaction
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'userId', 'type', 'amount', 'description', 'status']) &&
+             data.keys().hasOnly(['id', 'userId', 'type', 'amount', 'description', 'status', 'createdAt']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.type in ['deposit', 'purchase', 'commission_bonus', 'refund'] &&
+             data.amount is number &&
+             data.description is string && data.description.size() <= 200 &&
+             data.status in ['successful', 'pending'] &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 60));
+    }
+
+    // User profile document rules
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && (
+        (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'shopName', 'phone', 'avatar', 'tier', 'apiKey', 'role'])) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance'])) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'shopName', 'phone', 'avatar', 'tier', 'apiKey', 'role', 'walletBalance']))
+      );
+      allow delete: if false;
+
+      // Subcollection: Orders
+      match /orders/{orderId} {
+        allow get: if isOwner(userId) && isValidId(orderId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(orderId) && isValidOrder(incoming());
+        allow update: if isOwner(userId) && isValidId(orderId) && isValidOrder(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'digitalVoucher', 'trackingCode'])
+        );
+        allow delete: if false;
+      }
+
+      // Subcollection: Transactions
+      match /transactions/{transactionId} {
+        allow get: if isOwner(userId) && isValidId(transactionId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(transactionId) && isValidTransaction(incoming());
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+  }
+}
